@@ -33,4 +33,5 @@ sysinfo.txt
 *.apk
 *.unitypackage
 
+#ignore sprites to save space
 Assets/Sprites

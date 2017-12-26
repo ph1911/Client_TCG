@@ -12,7 +12,8 @@ public class Battle : MonoBehaviour
     private CardEffects _cardEffects;
     private BattleScreen _battleScreen;
 
-    public float maxTime;
+    [SerializeField]
+    private float maxTime;
 
     private float gameTimer, connectionTimer;
     private bool gameTimerRunning;

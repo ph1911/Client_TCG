@@ -55,6 +55,6 @@ public class MainMenuScreen : MonoBehaviour
         GameObject.Find("MainMenuScreen").transform.Find("StopSearchingButton").GetComponent<Button>().interactable = false;
         GameObject.Find("ConnectScreen").GetComponent<Canvas>().enabled = true;
         GameObject.Find("MainMenuScreen").GetComponent<Canvas>().enabled = false;
-        Client.Instance.CloseConnection(true);
+        Client.Instance.CloseConnection();
     }
 }

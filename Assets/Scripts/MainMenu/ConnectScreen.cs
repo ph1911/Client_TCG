@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
+using System.Threading;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -55,7 +55,7 @@ public class ConnectScreen : MonoBehaviour
 			client.clientName = GameObject.Find("InputNameField").GetComponent<InputField>().text;
 			client.language = language;
 			// start connection on a new thread
-			new Task(() => client.ConnectToServer(connectAddress, connectPort)).Start();
+			new Thread(() => client.ConnectToServer(connectAddress, connectPort)).Start();
 		}
 	}
 
@@ -73,7 +73,7 @@ public class ConnectScreen : MonoBehaviour
 	public void DisconnectButton()
 	{
 		try {
-			GameObject.Find("Client").GetComponent<Client>().CloseConnection(true);
+			GameObject.Find("Client").GetComponent<Client>().CloseConnection();
 			GameObject.Find("ConnectScreen").transform.Find("InfoText").GetComponent<Text>().text = "Disconnected";
 		} catch (Exception e) {
 			Debug.Log(e.Message);
@@ -82,7 +82,7 @@ public class ConnectScreen : MonoBehaviour
 	public void QuitGameButton()
 	{
 		try {
-			GameObject.Find("Client").GetComponent<Client>().CloseConnection(true);
+			GameObject.Find("Client").GetComponent<Client>().CloseConnection();
 			GameObject.Find("ConnectScreen").transform.Find("InfoText").GetComponent<Text>().text = "Disconnected";
 		} catch (Exception e) {
 			Debug.Log(e.Message);

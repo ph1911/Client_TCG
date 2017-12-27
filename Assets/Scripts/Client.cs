@@ -5,6 +5,8 @@ using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Collections.Generic;
+using System.ComponentModel;
 
 public class Client : MonoBehaviour
 {
@@ -29,6 +31,8 @@ public class Client : MonoBehaviour
 	private float serverKeepAliveTimer = 0f;
 	private bool connected;
 
+	private Queue<string> messageQueue = new Queue<string>();
+
 	public void ConnectToServer(string host, int port)
 	{
 		//create socket
@@ -36,35 +40,31 @@ public class Client : MonoBehaviour
 			socket = new TcpClient(host, port);
 			stream = socket.GetStream();
 			connected = true;
-			//listen every 1ms
-			InvokeRepeating("ListenOnStream", 0f, 0.001f);
+			ListenOnStream();
 		} catch (SocketException e) {
 			// enqueque the results of the failed connection in the GUI thread
 			ConnectScreen.connectionResultHandling.Enqueue(
-				() => Destroy(gameObject));
-			ConnectScreen.connectionResultHandling.Enqueue(
 				() => GameObject.Find("ConnectScreen").transform.Find("InfoText").GetComponent<Text>().text = e.Message);
-		} catch (Exception e) {
-			// enqueque the any other errors in the GUI thread
 			ConnectScreen.connectionResultHandling.Enqueue(
 				() => Destroy(gameObject));
-			ConnectScreen.connectionResultHandling.Enqueue(
-				() => GameObject.Find("ConnectScreen").transform.Find("InfoText").GetComponent<Text>().text = e.Message);
 		}
 	}
 
 	//read data if available
 	private void ListenOnStream()
 	{
-		if (!connected) {
-			return;
-		}
-		if (stream.DataAvailable) {
-			byte[] data = new byte[512];
-			stream.Read(data, 0, 1);
-			byte dataLength = data[0];
-			stream.Read(data, 0, dataLength);
-			OnIncomingData(Encoding.UTF8.GetString(data, 0, dataLength));
+		while (true) {
+			if (!connected) {
+				break;
+			}
+			if (stream.DataAvailable) {
+				byte[] data = new byte[512];
+				stream.Read(data, 0, 1);
+				byte dataLength = data[0];
+				stream.Read(data, 0, dataLength + 1);
+				// TODO replace with queue to return to GUI thread
+				OnIncomingData(Encoding.UTF8.GetString(data, 0, dataLength));
+			}
 		}
 	}
 
@@ -73,12 +73,17 @@ public class Client : MonoBehaviour
 		clientKeepAliveTimer += Time.deltaTime;
 		serverKeepAliveTimer += Time.deltaTime;
 		if (serverKeepAliveTimer > 20f) {
-			CloseConnection(true);
+			CloseConnection();
 			return;
 		}
 		if (clientKeepAliveTimer > 5f) {
 			Send("CKeepAlive");
 			clientKeepAliveTimer = 0;
+		}
+		// check if there are any messages in the message queue
+		if (messageQueue.Count > 0) {
+			// process them
+			OnIncomingData(messageQueue.Dequeue());
 		}
 	}
 
@@ -89,11 +94,13 @@ public class Client : MonoBehaviour
 			return;
 		}
 		try {
-			byte[] dataBytes = Encoding.UTF8.GetBytes(data);
-			byte[] sendBytes = new byte[dataBytes.Length + 1];
-			Array.Copy(dataBytes, 0, sendBytes, 1, dataBytes.Length);
-			sendBytes[0] = Convert.ToByte(dataBytes.Length);
-			stream.Write(sendBytes, 0, sendBytes.Length);
+			byte[] messageBytes = Encoding.UTF8.GetBytes(data);
+			byte[] prefixBytes = BitConverter.GetBytes(messageBytes.Length);
+			// assemble the whole data with prefix + message
+			byte[] dataBytes = prefixBytes;
+			Array.Copy(messageBytes, dataBytes, messageBytes.Length);
+
+			stream.Write(dataBytes, 0, messageBytes.Length);
 		} catch (Exception e) {
 			Debug.Log("send error " + e.Message);
 		}
@@ -103,32 +110,31 @@ public class Client : MonoBehaviour
 	private void OnIncomingData(string data)
 	{
 		Debug.Log(data);
-
 		serverKeepAliveTimer = 0f;
 		string[] allData = data.Split('|');
 		switch (allData[0]) {
-			case "SWHO":
-				Send("CWHO|" + clientName);
+			case "S_Who":
+				Send("C_Name|" + clientName);
 				break;
-			case "SAuthenticated":
+			case "S_ClientAuthenticated":
 				GameObject.Find("MainMenuScreen").transform.Find("InfoText").GetComponent<Text>().text = "Connected";
 				GameObject.Find("ConnectScreen").GetComponent<Canvas>().enabled = false;
 				GameObject.Find("MainMenuScreen").GetComponent<Canvas>().enabled = true;
 				GameObject.Find("ConnectScreen").transform.Find("InfoText").GetComponent<Text>().text = "Welcome back";
 				break;
-			case "SWrongName":
+			case "S_WrongName":
 				GameObject.Find("ConnectScreen").transform.Find("InfoText").GetComponent<Text>().text
 					= "This name is not available.";
 				CloseConnection();
 				break;
-			case "SRDY":
+			case "S_GameReady":
 				opponentName = allData[1];
 				SceneManager.LoadScene("Battle");
 				break;
-			case "CardDrawFocus":
+			case "S_Focus":
 				GameObject.Find("Fighter1").GetComponent<Properties>().cardToDrawOnFocus = allData[1];
 				break;
-			case "CardDraw":
+			case "S_CardDraw":
 				if (allData[1] == "Pre" && allData.Length > 2) {
 					for (int i = 2; i < allData.Length; i++) {
 						GameObject.Find("Fighter1").GetComponent<Properties>().cardsToDrawPreFight.Add(allData[i]);
@@ -143,19 +149,19 @@ public class Client : MonoBehaviour
 					GameObject.Find("Fighter1").GetComponent<Properties>().cardsToDrawAfterFight.Add("Nothing");
 				}
 				break;
-			case "OpFocus":
+			case "S_OpponentFocus":
 				GameObject.Find("Fighter2").GetComponent<Properties>().cardToDrawOnFocus = allData[1];
 				GameObject.Find("Fighter2").GetComponent<Properties>().action = "Focus";
 				break;
-			case "OpStrike":
+			case "S_OpponentStrike":
 				GameObject.Find("Fighter2").GetComponent<Properties>().cardToDrawOnFocus = "Nothing";
 				GameObject.Find("Fighter2").GetComponent<Properties>().action = "Strike";
 				break;
-			case "OpBlock":
+			case "S_OpponentBlock":
 				GameObject.Find("Fighter2").GetComponent<Properties>().cardToDrawOnFocus = "Nothing";
 				GameObject.Find("Fighter2").GetComponent<Properties>().action = "Block";
 				break;
-			case "OpDraw":
+			case "S_OpponentCardDraw":
 				if (allData[1] == "Pre" && allData.Length > 2) {
 					for (int i = 2; i < allData.Length; i++) {
 						GameObject.Find("Fighter2").GetComponent<Properties>().cardsToDrawPreFight.Add(allData[i]);
@@ -170,26 +176,20 @@ public class Client : MonoBehaviour
 					GameObject.Find("Fighter2").GetComponent<Properties>().cardsToDrawAfterFight.Add("Nothing");
 				}
 				break;
-			case "SDISC":
-				CloseConnection();
-				break;
-			case "Chat":
+			case "S_Chat":
 				GameObject.Find("ChatScreen").GetComponent<ChatScreen>().ReceiveMessage(allData[1]);
 				break;
-			case "END":
+			case "S_GameEnd":
 				GameObject.Find("BattleScreen").GetComponent<Battle>().gameEnds(allData[1]);
 				break;
 		}
 	}
 
 	//close connection if application closed ect
-	public void CloseConnection([Optional]bool informServer)
+	public void CloseConnection()
 	{
 		if (!connected) {
 			return;
-		}
-		if (informServer) {
-			Send("CDISC");
 		}
 		try {
 			socket.Close();
@@ -200,10 +200,10 @@ public class Client : MonoBehaviour
 	}
 	private void OnApplicationQuit()
 	{
-		CloseConnection(true);
+		CloseConnection();
 	}
 	private void OnDisable()
 	{
-		CloseConnection(true);
+		CloseConnection();
 	}
 }

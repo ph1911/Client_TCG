@@ -12,7 +12,7 @@ public class ConnectScreen : MonoBehaviour
 	public string connectAddress = "52.59.59.89";
 	public int connectPort = 1911;
 
-	public static readonly Queue<Action> connectionResultHandling = new Queue<Action>();
+	public static readonly Queue<Action> connectionResultHandlingQueue = new Queue<Action>();
 
 	private Client client;
 
@@ -37,9 +37,9 @@ public class ConnectScreen : MonoBehaviour
 		// return focus to name input field
 		GameObject.Find("InputNameField").GetComponent<InputField>().ActivateInputField();
 		// check if results of a possible attempted connection need to be handled
-		if (connectionResultHandling.Count > 0) {
-			while (connectionResultHandling.Count > 0) {
-				connectionResultHandling.Dequeue().Invoke();
+		if (connectionResultHandlingQueue.Count > 0) {
+			while (connectionResultHandlingQueue.Count > 0) {
+				connectionResultHandlingQueue.Dequeue().Invoke();
 			}
 		}
 	}
